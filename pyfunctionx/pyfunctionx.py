@@ -2,8 +2,10 @@ import reflex as rx
 import sympy
 from sympy import symbols, sympify, limit, oo, latex
 
+# Símbolo principal para la variable x
 x_sym = symbols('x')
 
+# Configuración de MathJax para renderizado de ecuaciones matemáticas
 MATHJAX_SCRIPT_HTML = """
 <script type="text/javascript" id="MathJax-script" async
     src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js">
@@ -31,40 +33,45 @@ MATHJAX_SCRIPT_HTML = """
 """
 
 class State(rx.State):
-    """"
-    funcion_str: str = "(x**2 - 1) / (x - 1)"
-    punto_x_str: str = "1"
-    resultado_analisis: str = ""
-    funcion_redefinida_latex: str = ""
-    """
-    funcion_str: str = "(x**2 - 1) / (x - 1)"
-    punto_x_str: str = ""  # Eliminamos el valor por defecto
-    resultado_analisis: str = ""
-    funcion_redefinida_latex: str = ""
+    """Estado de la aplicación que maneja los datos y la lógica principal"""
+    
+    # Variables de estado
+    funcion_str: str = "(x**2 - 1) / (x - 1)"  # Función ingresada por el usuario
+    punto_x_str: str = ""  # Valor de x a evaluar
+    resultado_analisis: str = ""  # Resultado del análisis de continuidad
+    funcion_redefinida_latex: str = ""  # Función redefinida (si es aplicable)
+
+    def limpiar_campos(self):
+        """Restablece todos los campos a sus valores iniciales"""
+        self.funcion_str = ""
+        self.punto_x_str = ""
+        self.resultado_analisis = ""
+        self.funcion_redefinida_latex = ""
 
     def _parse_input(self, expr_str, val_str):
         """
-        try:
-            expr_str_sympy = expr_str.replace('^', '**').replace('ln(', 'log(')
-            func = sympify(expr_str_sympy)
-        except (SyntaxError, TypeError, sympy.SympifyError) as e:
-            return None, None, f"Error al parsear la función: {str(e)}"
+        Convierte las entradas de texto en expresiones sympy válidas
+        Args:
+            expr_str: string con la función matemática
+            val_str: string con el valor de x a evaluar
+        Returns:
+            tuple: (función sympy, punto evaluado, mensaje de error)
         """
         try:
-            # Procesamiento especial para raíces
+            # Procesamiento de la función: conversión de sintaxis y manejo de raíces
             expr_str_sympy = expr_str.replace('^', '**').replace('ln(', 'log(')
-
-            # Convertir sqrt[n](expr) a root(expr, n)
+            
+            # Convertir notación sqrt[n](expr) a root(expr, n)
             import re
             expr_str_sympy = re.sub(r'sqrt\[([^\]]+)\]\(([^\)]+)\)', r'root(\2, \1)', expr_str_sympy)
-            
-            # Convertir sqrt(expr) a root(expr, 2)
             expr_str_sympy = expr_str_sympy.replace('sqrt(', 'root(, 2)').replace('root(, 2)', 'root(')
             
             func = sympify(expr_str_sympy)
         except (SyntaxError, TypeError, sympy.SympifyError) as e:
             return None, None, f"Error al parsear la función: {str(e)}"
+            
         try:
+            # Procesamiento del valor de x (admite infinito)
             if val_str.lower() == 'oo':
                 punto = oo
             elif val_str.lower() == '-oo':
@@ -75,18 +82,21 @@ class State(rx.State):
                     raise ValueError("El punto x debe ser un valor numérico o oo / -oo.")
         except (SyntaxError, TypeError, sympy.SympifyError, ValueError) as e:
             return func, None, f"Error al parsear el punto x: {str(e)}"
+            
         return func, punto, None
 
     def analizar_funcion_event(self):
+        """Analiza la continuidad de la función en el punto dado"""
         self.resultado_analisis = ""
         self.funcion_redefinida_latex = ""
 
+        # Validación de entradas vacías
         if not self.funcion_str.strip() or not self.punto_x_str.strip():
             self.resultado_analisis = "Por favor, ingrese una función y un valor para x."
             return
 
+        # Parseo de entradas
         func, punto_eval, error_msg = self._parse_input(self.funcion_str, self.punto_x_str)
-
         if error_msg:
             self.resultado_analisis = error_msg
             return
@@ -94,62 +104,35 @@ class State(rx.State):
             self.resultado_analisis = "Error interno al parsear la entrada."
             return
 
+        # Cálculo de valores y límites
         try:
             valor_en_punto = func.subs(x_sym, punto_eval)
         except Exception:
             valor_en_punto = sympy.nan
+            
         try:
             lim_en_punto = limit(func, x_sym, punto_eval)
         except Exception as e:
             self.resultado_analisis = f"No se pudo calcular el límite en x=${latex(punto_eval)}$: {str(e)}"
             return
+            
         try:
             lim_izquierda = limit(func, x_sym, punto_eval, dir='-')
             lim_derecha = limit(func, x_sym, punto_eval, dir='+')
         except Exception:
             lim_izquierda = lim_derecha = sympy.nan
 
+        # Análisis de continuidad
         f_a_definida = valor_en_punto.is_finite
         lim_existe_y_finito = lim_en_punto.is_finite
-        """
+        
+        # Preparación de strings para LaTeX
         punto_eval_latex = latex(punto_eval) 
-        mensaje = f"Análisis para $f(x) = {latex(func)}$ en $x = {punto_eval_latex}$:\n"
         sub_general_str = f"x \\to {punto_eval_latex}"
         sub_izquierda_str = f"x \\to {punto_eval_latex}^-"
         sub_derecha_str = f"x \\to {punto_eval_latex}^+"
 
-        if f_a_definida and lim_existe_y_finito and valor_en_punto == lim_en_punto:
-            mensaje += f"✅ La función es **CONTINUA** en $x = {punto_eval_latex}$.\n"
-            mensaje += f"$f({punto_eval_latex}) = {latex(valor_en_punto)}$ y $\\lim_{{{sub_general_str}}} f(x) = {latex(lim_en_punto)}$."
-        else:
-            mensaje += f"❌ La función es **DISCONTINUA** en $x = {punto_eval_latex}$.\n"
-            mensaje += f"$f({punto_eval_latex}) = {latex(valor_en_punto)}$\n"
-            mensaje += f"$\\lim_{{{sub_general_str}}} f(x) = {latex(lim_en_punto)}$\n"
-            mensaje += f"$\\lim_{{{sub_izquierda_str}}} f(x) = {latex(lim_izquierda)}$\n"
-            mensaje += f"$\\lim_{{{sub_derecha_str}}} f(x) = {latex(lim_derecha)}$\n"
-
-            if lim_existe_y_finito:
-                mensaje += "**Tipo:** Discontinuidad EVITABLE\n"
-                f_redefinida = sympy.Piecewise((lim_en_punto, sympy.Eq(x_sym, punto_eval)), (func, True))
-                self.funcion_redefinida_latex = latex(f_redefinida)
-                mensaje += f"Redefinición posible:\n$g(x) = {self.funcion_redefinida_latex}$"
-            else:
-                if lim_izquierda.is_finite and lim_derecha.is_finite and lim_izquierda != lim_derecha:
-                    mensaje += "**Tipo:** Discontinuidad NO EVITABLE (de salto)\n"
-                elif abs(lim_en_punto) == oo or abs(lim_izquierda) == oo or abs(lim_derecha) == oo:
-                    mensaje += "**Tipo:** Discontinuidad NO EVITABLE (infinita)\n"
-                else:
-                    mensaje += "**Tipo:** Discontinuidad NO EVITABLE (esencial)\n"
-
-        self.resultado_analisis = mensaje
-        """
-        punto_eval_latex = latex(punto_eval) 
-        mensaje = f"Análisis para $f(x) = {latex(func)}$ en $x = {punto_eval_latex}$:\n\n"
-        sub_general_str = f"x \\to {punto_eval_latex}"
-        sub_izquierda_str = f"x \\to {punto_eval_latex}^-"
-        sub_derecha_str = f"x \\to {punto_eval_latex}^+"
-
-        # Función para formatear valores especiales
+        # Función para formatear valores especiales (infinito, raíces complejas)
         def format_val(val):
             if val == oo:
                 return r"\infty"
@@ -159,6 +142,9 @@ class State(rx.State):
                 return r"\text{Indefinido (complejo)}"
             return latex(val)
 
+        # Construcción del mensaje de resultados
+        mensaje = f"Análisis para $f(x) = {latex(func)}$ en $x = {punto_eval_latex}$:\n\n"
+        
         if f_a_definida and lim_existe_y_finito and valor_en_punto == lim_en_punto:
             mensaje += f"✅ **La función es CONTINUA** en $x = {punto_eval_latex}$.\n\n"
             mensaje += f"- $f({punto_eval_latex}) = {format_val(valor_en_punto)}$\n"
@@ -166,10 +152,9 @@ class State(rx.State):
         else:
             mensaje += f"❌ **La función es DISCONTINUA** en $x = {punto_eval_latex}$.\n\n"
             mensaje += f"- Valor en el punto: $f({punto_eval_latex}) = {format_val(valor_en_punto)}$\n"
-            mensaje += f"- Límite general: $\\lim_{{{sub_general_str}}} f(x) = {format_val(lim_en_punto)}$\n"
-            mensaje += f"- Límite izquierdo: $\\lim_{{{sub_izquierda_str}}} f(x) = {format_val(lim_izquierda)}$\n"
-            mensaje += f"- Límite derecho: $\\lim_{{{sub_derecha_str}}} f(x) = {format_val(lim_derecha)}$\n\n"
+            mensaje += f"- Límite general: $\\lim_{{{sub_general_str}}} f(x) = {format_val(lim_en_punto)}$\n\n"
 
+            # Clasificación del tipo de discontinuidad
             if lim_existe_y_finito:
                 mensaje += "**Tipo:** Discontinuidad EVITABLE\n\n"
                 f_redefinida = sympy.Piecewise((lim_en_punto, sympy.Eq(x_sym, punto_eval)), (func, True))
@@ -184,41 +169,21 @@ class State(rx.State):
                     mensaje += "**Tipo:** Discontinuidad NO EVITABLE (esencial)"
 
         self.resultado_analisis = mensaje
-"""
+
 def index() -> rx.Component:
+    """Componente principal de la interfaz de usuario"""
     return rx.fragment(
         rx.html(MATHJAX_SCRIPT_HTML),
         rx.center(
             rx.vstack(
-                rx.heading("Reflex Function", size="8", margin_bottom="1em"),
-                rx.text("Ingrese f(x):", as_="label", font_size="large", margin_bottom="0.2em"),
-                rx.input(
-                    id="funcion_input",
-                    value=State.funcion_str,
-                    placeholder="Ej: (x**2 - 1) / (x - 1)",
-                    on_change=State.set_funcion_str,
-                    width="100%",
-                    size="3",
-                ),
-                rx.text("Ingrese x:", as_="label", font_size="large", margin_top="1em", margin_bottom="0.2em"),
-                rx.input(
-                    id="punto_input",
-                    value=State.punto_x_str,
-                    placeholder="Ej: 1",
-                    on_change=State.set_punto_x_str,
-                    width="100%",
-                    size="3",
-                ),
-"""
-def index() -> rx.Component:
-    return rx.fragment(
-        rx.html(MATHJAX_SCRIPT_HTML),
-        rx.center(
-            rx.vstack(
-                rx.heading("Reflex Function", size="8", margin_bottom="1em"),
+                # Título principal
+                rx.heading("Reflex Function", size="8", margin="0"),
+                rx.text("Evaluador de Límites de funciones", size="4", margin_bottom="20px"),
+                
+                # Sección de entrada de función
                 rx.text("Ingrese f(x):", as_="label", font_size="large", margin_bottom="0.2em"),
                 
-                # Botones matemáticos
+                # Botones para símbolos matemáticos
                 rx.hstack(
                     *[
                         rx.button(
@@ -233,8 +198,10 @@ def index() -> rx.Component:
                     spacing="2",
                     width="100%",
                 ),
-                rx.text("Nota: Para raíces use sqrt[n](expr) o root(expr, n)", font_size="small", color=rx.color("gray", 10)),
+                rx.text("Nota: Para raíces use sqrt[n](expr) o root(expr, n)", 
+                       font_size="small", color=rx.color("gray", 10)),
                 
+                # Campo de entrada para la función
                 rx.input(
                     id="funcion_input",
                     value=State.funcion_str,
@@ -244,7 +211,9 @@ def index() -> rx.Component:
                     size="3",
                 ),
                 
-                rx.text("Ingrese el valor de x a evaluar:", as_="label", font_size="large", margin_top="1em", margin_bottom="0.2em"),
+                # Sección de entrada para el valor de x
+                rx.text("Ingrese el valor de x a evaluar:", 
+                       as_="label", font_size="large", margin_top="1em", margin_bottom="0.2em"),
                 rx.input(
                     id="punto_input",
                     value=State.punto_x_str,
@@ -254,13 +223,29 @@ def index() -> rx.Component:
                     size="3",
                 ),
 
-                rx.button(
-                    "Analizar",
-                    on_click=State.analizar_funcion_event,
-                    size="4",
+                # Botones de acción (Analizar y Limpiar)
+                rx.hstack(
+                    rx.button(
+                        "Analizar",
+                        on_click=State.analizar_funcion_event,
+                        size="4",
+                        flex="1",
+                        color_scheme="green",
+                    ),
+                    rx.button(
+                        "Limpiar",
+                        on_click=State.limpiar_campos,
+                        size="4",
+                        flex="1",
+                        color_scheme="gray",
+                        variant="soft",
+                    ),
+                    spacing="4",
                     width="100%",
                     margin_top="1em",
                 ),
+
+                # Sección de resultados
                 rx.cond(
                     State.resultado_analisis,
                     rx.box(
@@ -275,6 +260,8 @@ def index() -> rx.Component:
                         font_size="large"
                     )
                 ),
+                
+                # Sección de función redefinida (si aplica)
                 rx.cond(
                     State.funcion_redefinida_latex,
                     rx.box(
@@ -290,6 +277,8 @@ def index() -> rx.Component:
                         margin_top="1em",
                     )
                 ),
+                
+                # Estilos del contenedor principal
                 spacing="4",
                 align="stretch",
                 width="100%",
@@ -305,6 +294,7 @@ def index() -> rx.Component:
         )
     )
 
+# Configuración de la aplicación
 app = rx.App(
     theme=rx.theme(
         appearance="dark",
@@ -313,4 +303,5 @@ app = rx.App(
     )
 )
 
+# Añadir la página principal
 app.add_page(index, title="Reflex Function")
