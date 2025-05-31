@@ -158,8 +158,13 @@ class State(rx.State):
             if lim_existe_y_finito:
                 mensaje += "**Tipo:** Discontinuidad EVITABLE\n\n"
                 f_redefinida = sympy.Piecewise((lim_en_punto, sympy.Eq(x_sym, punto_eval)), (func, True))
-                self.funcion_redefinida_latex = latex(f_redefinida)
-                mensaje += f"**Redefinición posible:**\n$g(x) = {self.funcion_redefinida_latex}$"
+                # Versión con cases (más legible)
+                self.funcion_redefinida_latex = (
+                    r"\begin{cases} " +
+                    latex(lim_en_punto) + r" & \text{si } x = " + latex(punto_eval) + r" \\ " +
+                    latex(func) + r" & \text{si } x \neq " + latex(punto_eval) +
+                    r"\end{cases}"
+                )
             else:
                 if lim_izquierda.is_finite and lim_derecha.is_finite and lim_izquierda != lim_derecha:
                     mensaje += "**Tipo:** Discontinuidad NO EVITABLE (de salto finito)"
