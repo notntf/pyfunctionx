@@ -31,14 +31,36 @@ MATHJAX_SCRIPT_HTML = """
 """
 
 class State(rx.State):
+    """"
     funcion_str: str = "(x**2 - 1) / (x - 1)"
     punto_x_str: str = "1"
     resultado_analisis: str = ""
     funcion_redefinida_latex: str = ""
+    """
+    funcion_str: str = "(x**2 - 1) / (x - 1)"
+    punto_x_str: str = ""  # Eliminamos el valor por defecto
+    resultado_analisis: str = ""
+    funcion_redefinida_latex: str = ""
 
     def _parse_input(self, expr_str, val_str):
+        """
         try:
             expr_str_sympy = expr_str.replace('^', '**').replace('ln(', 'log(')
+            func = sympify(expr_str_sympy)
+        except (SyntaxError, TypeError, sympy.SympifyError) as e:
+            return None, None, f"Error al parsear la función: {str(e)}"
+        """
+        try:
+            # Procesamiento especial para raíces
+            expr_str_sympy = expr_str.replace('^', '**').replace('ln(', 'log(')
+
+            # Convertir sqrt[n](expr) a root(expr, n)
+            import re
+            expr_str_sympy = re.sub(r'sqrt\[([^\]]+)\]\(([^\)]+)\)', r'root(\2, \1)', expr_str_sympy)
+            
+            # Convertir sqrt(expr) a root(expr, 2)
+            expr_str_sympy = expr_str_sympy.replace('sqrt(', 'root(, 2)').replace('root(, 2)', 'root(')
+            
             func = sympify(expr_str_sympy)
         except (SyntaxError, TypeError, sympy.SympifyError) as e:
             return None, None, f"Error al parsear la función: {str(e)}"
@@ -89,7 +111,7 @@ class State(rx.State):
 
         f_a_definida = valor_en_punto.is_finite
         lim_existe_y_finito = lim_en_punto.is_finite
-        
+        """
         punto_eval_latex = latex(punto_eval) 
         mensaje = f"Análisis para $f(x) = {latex(func)}$ en $x = {punto_eval_latex}$:\n"
         sub_general_str = f"x \\to {punto_eval_latex}"
@@ -120,7 +142,49 @@ class State(rx.State):
                     mensaje += "**Tipo:** Discontinuidad NO EVITABLE (esencial)\n"
 
         self.resultado_analisis = mensaje
+        """
+        punto_eval_latex = latex(punto_eval) 
+        mensaje = f"Análisis para $f(x) = {latex(func)}$ en $x = {punto_eval_latex}$:\n\n"
+        sub_general_str = f"x \\to {punto_eval_latex}"
+        sub_izquierda_str = f"x \\to {punto_eval_latex}^-"
+        sub_derecha_str = f"x \\to {punto_eval_latex}^+"
 
+        # Función para formatear valores especiales
+        def format_val(val):
+            if val == oo:
+                return r"\infty"
+            elif val == -oo:
+                return r"-\infty"
+            elif isinstance(val, sympy.Pow) and val.args[0] == -1:
+                return r"\text{Indefinido (complejo)}"
+            return latex(val)
+
+        if f_a_definida and lim_existe_y_finito and valor_en_punto == lim_en_punto:
+            mensaje += f"✅ **La función es CONTINUA** en $x = {punto_eval_latex}$.\n\n"
+            mensaje += f"- $f({punto_eval_latex}) = {format_val(valor_en_punto)}$\n"
+            mensaje += f"- $\\lim_{{{sub_general_str}}} f(x) = {format_val(lim_en_punto)}$"
+        else:
+            mensaje += f"❌ **La función es DISCONTINUA** en $x = {punto_eval_latex}$.\n\n"
+            mensaje += f"- Valor en el punto: $f({punto_eval_latex}) = {format_val(valor_en_punto)}$\n"
+            mensaje += f"- Límite general: $\\lim_{{{sub_general_str}}} f(x) = {format_val(lim_en_punto)}$\n"
+            mensaje += f"- Límite izquierdo: $\\lim_{{{sub_izquierda_str}}} f(x) = {format_val(lim_izquierda)}$\n"
+            mensaje += f"- Límite derecho: $\\lim_{{{sub_derecha_str}}} f(x) = {format_val(lim_derecha)}$\n\n"
+
+            if lim_existe_y_finito:
+                mensaje += "**Tipo:** Discontinuidad EVITABLE\n\n"
+                f_redefinida = sympy.Piecewise((lim_en_punto, sympy.Eq(x_sym, punto_eval)), (func, True))
+                self.funcion_redefinida_latex = latex(f_redefinida)
+                mensaje += f"**Redefinición posible:**\n$g(x) = {self.funcion_redefinida_latex}$"
+            else:
+                if lim_izquierda.is_finite and lim_derecha.is_finite and lim_izquierda != lim_derecha:
+                    mensaje += "**Tipo:** Discontinuidad NO EVITABLE (de salto finito)"
+                elif abs(lim_en_punto) == oo or abs(lim_izquierda) == oo or abs(lim_derecha) == oo:
+                    mensaje += "**Tipo:** Discontinuidad NO EVITABLE (infinita)"
+                else:
+                    mensaje += "**Tipo:** Discontinuidad NO EVITABLE (esencial)"
+
+        self.resultado_analisis = mensaje
+"""
 def index() -> rx.Component:
     return rx.fragment(
         rx.html(MATHJAX_SCRIPT_HTML),
@@ -145,6 +209,51 @@ def index() -> rx.Component:
                     width="100%",
                     size="3",
                 ),
+"""
+def index() -> rx.Component:
+    return rx.fragment(
+        rx.html(MATHJAX_SCRIPT_HTML),
+        rx.center(
+            rx.vstack(
+                rx.heading("Reflex Function", size="8", margin_bottom="1em"),
+                rx.text("Ingrese f(x):", as_="label", font_size="large", margin_bottom="0.2em"),
+                
+                # Botones matemáticos
+                rx.hstack(
+                    *[
+                        rx.button(
+                            symbol,
+                            on_click=lambda s=symbol: State.set_funcion_str(State.funcion_str + s),
+                            size="2",
+                        )
+                        for symbol in ["x", "^", "(", ")", "/", "*", "+", "-",
+                                    "sqrt[](", "root(", "sin(", "cos(", "tan(", "log(", "ln("]
+                    ],
+                    wrap="wrap",
+                    spacing="2",
+                    width="100%",
+                ),
+                rx.text("Nota: Para raíces use sqrt[n](expr) o root(expr, n)", font_size="small", color=rx.color("gray", 10)),
+                
+                rx.input(
+                    id="funcion_input",
+                    value=State.funcion_str,
+                    placeholder="Ej: (x^2 - 1)/(x - 1)",
+                    on_change=State.set_funcion_str,
+                    width="100%",
+                    size="3",
+                ),
+                
+                rx.text("Ingrese el valor de x a evaluar:", as_="label", font_size="large", margin_top="1em", margin_bottom="0.2em"),
+                rx.input(
+                    id="punto_input",
+                    value=State.punto_x_str,
+                    placeholder="Ej: 1, 2.5, oo (infinito), -oo",
+                    on_change=State.set_punto_x_str,
+                    width="100%",
+                    size="3",
+                ),
+
                 rx.button(
                     "Analizar",
                     on_click=State.analizar_funcion_event,
