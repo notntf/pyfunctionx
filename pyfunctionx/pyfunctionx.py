@@ -183,7 +183,7 @@ def index() -> rx.Component:
             rx.vstack(
                 # Título principal
                 rx.heading("Reflex Function", size="8", margin="0"),
-                rx.text("Evaluador de Límites de funciones", size="4", margin_bottom="20px"),
+                rx.text("Evaluador de Continuidad de funciones", size="4", margin_bottom="20px"),
                 
                 # Sección de entrada de función
                 rx.text("Ingrese f(x):", as_="label", font_size="large", margin_bottom="0.2em"),
